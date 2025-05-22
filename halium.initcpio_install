@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-only
+
+build() {
+    map add_binary resize2fs swapon e2fsck dumpe2fs
+
+    add_file /etc/udev/rules.d/90-touchscreen.rules 
+    add_dir /usr/lib/udev/hwdb.d
+}
+
+help() {
+    cat <<HELPEOF
+This hook provides crucial runtime necessities for booting aarchd. DO NOT
+remove this hook unless you know what you're doing.
+HELPEOF
+}
+
+# vim: set ft=sh ts=4 sw=4 et:

@@ -1,0 +1,46 @@
+#!/bin/bash
+
+set -e
+
+TMPDIR="/tmp/aarchd-initramfs"
+WORKDIR="$TMPDIR/work"
+CONF="/etc/mkinitcpio.aarchd.conf"
+
+usage() {
+    echo "Usage: $0 [--clean]"
+    exit 1
+}
+
+if [[ $# -eq 0 ]]; then
+    echo "[+] Creating temporary directory at $WORKDIR"
+    mkdir -p "$WORKDIR"
+
+    echo "[+] Generating initramfs content using mkinitcpio..."
+    mkinitcpio -c "$CONF" -d "$WORKDIR"
+
+    echo "[+] Removing unneeded files..."
+    rm -rf "$WORKDIR/usr/lib/modules/" \
+           "$WORKDIR/bin/kmod" \
+           "$WORKDIR/lib/libkmod."*
+    echo "  -> Removed: usr/lib/modules, bin/kmod, lib/libkmod.*"
+
+    echo "[+] Creating gzip-compressed initramfs..."
+    (cd "$WORKDIR" && find . | cpio -o -H newc | gzip -c) > "$TMPDIR/aarchd-initrd.img-gz"
+    echo "  -> Saved: $TMPDIR/aarchd-initrd.img-gz"
+
+    echo "[+] Creating lz4-compressed initramfs..."
+    (cd "$WORKDIR" && find . | cpio -o -H newc | lz4 -l -c) > "$TMPDIR/aarchd-initrd.img-lz4"
+    echo "  -> Saved: $TMPDIR/aarchd-initrd.img-lz4"
+
+    echo "[+] Done."
+    exit 0
+fi
+
+if [[ "$1" == "--clean" ]]; then
+    echo "[+] Cleaning $TMPDIR..."
+    rm -rf "$TMPDIR"
+    echo "  -> Done."
+    exit 0
+else
+    usage
+fi

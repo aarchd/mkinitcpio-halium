@@ -1,0 +1,627 @@
+#!/usr/bin/ash
+
+run_hook() {
+    # Local filesystem mounting			-*- shell-script -*-
+
+    _log_msg() {
+    	if [ "$quiet" = "y" ]; then return; fi
+    	printf "$@" > /dev/kmsg || true
+    }
+    
+    tell_kmsg() {
+    	# Echos a string into /dev/kmsg, ignoring errors.
+    	echo "initrd: $1" >/dev/kmsg || true
+    }
+    
+    halium_panic() {
+    	# Puts panic reason into kmsg and then starts the panic handlers
+    	REASON="$1"
+    	tell_kmsg "PANIC for reason: $REASON"
+    	panic $REASON
+    }
+    
+    identify_boot_mode() {
+    	# Our current list of supported boot modes:
+    	## BOOT_MODE = halium and android
+    	BOOT_MODE='halium'
+    
+    	# The boot reason is exported via /proc/cmdline
+    	# The standard method is using androidboot.mode parameter.
+    
+    	for x in $(cat /proc/cmdline); do
+    		case ${x} in
+    		androidboot.mode=*)
+    			android_bootmode=${x#*=}
+    			;;
+    		# Android 9 system-as-root
+    		skip_initramfs)
+    			normal_boot="y"
+    			;;
+    		# Android 10+ recovery-as-boot
+    		androidboot.force_normal_boot=1)
+    			normal_boot="y"
+    			;;
+    		# Android 12+ (GKI 2.0+) recovery-as-boot
+    		bootconfig)
+    			if grep -q 'androidboot.force_normal_boot = "1"' /proc/bootconfig; then
+    				normal_boot="y"
+    			fi
+    			;;
+    		esac
+    	done
+    
+    	if echo "$android_bootmode" | grep charger; then
+    		BOOT_MODE="android"
+    	fi
+    
+    	## Some devices may be using 'bootreason', others 'boot_reason'
+    	## XXX: Find a better way to handle device specifics here
+    
+    	# Krillin
+    	if [ -f /sys/class/BOOT/BOOT/boot/boot_mode ]; then
+    		boot_reason=$(cat /sys/class/BOOT/BOOT/boot/boot_mode)
+    		case "${boot_reason}" in
+    		1) BOOT_MODE="android" ;; # Meta
+    		4) BOOT_MODE="android" ;; # Factory
+    		8) BOOT_MODE="android" ;; # Power off charging
+    		9) BOOT_MODE="android" ;; # Low power charging
+    		esac
+    	fi
+    
+    	# On Android 8+ devices the 'android' boot mode is broken and should be avoided.
+    	# This behavior can be overridden with the cmdline flag 'halium_no_avoid_android_mode'
+    	# List of API levels and referred Android versions: https://source.android.com/setup/start/build-numbers
+    	if ! grep -wq halium_no_avoid_android_mode /proc/cmdline; then
+    		api_level=$(sed -n 's/^ro.build.version.sdk=//p' /android-system/build.prop) # e.g. 26 for Android 8.0
+    		[ -z "$api_level" ] && api_level=0
+    		tell_kmsg "Android system image API level is $api_level"
+    		if [ "$BOOT_MODE" = "android" ] && [ $api_level -ge 26 ]; then
+    			tell_kmsg "Android 8+ device detected! Rebooting to reset non-standard boot mode..."
+    			reboot -f
+    		fi
+    	fi
+    
+    	tell_kmsg "boot mode: $BOOT_MODE"
+    }
+    
+    identify_android_image() {
+    	#   * "system" if the image should be mounted at '/android/system/'
+    	#   * "unknown" if neither is found
+    
+    	ROOTFS_SEARCH_PATHS="/halium-system/var/lib/lxc/android/android-rootfs.img"
+    
+    	for image in ${ROOTFS_SEARCH_PATHS}; do
+    		if [ -f "${image}" ]; then
+    			ANDROID_IMAGE_MODE="rootfs"
+    			ANDROID_IMAGE="${image}"
+    
+    			return
+    		fi
+    	done
+    
+    	ANDROID_IMAGE_MODE="unknown"
+    }
+    
+    set_halium_version_properties() {
+    	halium_system=$1
+    	android_data=$2
+    
+    	channel_ini=$1/etc/system-image/channel.ini
+    	def_language=$1/custom/default_language
+    
+    	halium="unknown"
+    	device="unknown"
+    	custom="unknown"
+    	version="unknown"
+    	channel="unknown"
+    	def_lang="unknown"
+    
+    	if [ -f "$channel_ini" ]; then
+    		IFS=','
+    		for i in $(grep version_detail $channel_ini | awk -F ' ' '{print $2}'); do
+    			id=${i%=*}
+    			case $id in
+    			halium) halium=${i#halium=} ;;
+    			device) device=${i#device=} ;;
+    			custom) custom=${i#custom=} ;;
+    			version) version=${i#version=} ;;
+    			esac
+    		done
+    		unset IFS
+    		channel=$(grep channel $channel_ini | awk -F ' ' '{print $2}')
+    	fi
+    
+    	if [ -f "$def_language" ]; then
+    		lang=$(cat $def_language)
+    		if [ -n "$lang" ]; then
+    			def_lang=$lang
+    		fi
+    	fi
+    
+    	# Write down so the android property system can load them automatically
+    	mkdir -p $android_data/property
+    	chmod 700 $android_data/property
+    	echo -n "$halium" >$android_data/property/persist.halium.version.rootfs
+    	echo -n "$device" >$android_data/property/persist.halium.version.device
+    	echo -n "$custom" >$android_data/property/persist.halium.version.custom
+    	echo -n "$channel" >$android_data/property/persist.halium.version.channel
+    	echo -n "$version" >$android_data/property/persist.halium.version
+    	echo -n "$def_lang" >$android_data/property/persist.halium.default_language
+    	chmod 600 $android_data/property/persist.halium*
+    }
+    
+    mount_android_partitions() {
+    	fstab=$1
+    	mount_root=$2
+    	real_userdata=$3
+    
+    	tell_kmsg "checking fstab $fstab for additional mount points"
+    
+    	# On systems with A/B partition layout, current slot is provided via cmdline parameter.
+    	ab_slot_suffix=$(grep -o 'androidboot\.slot_suffix=..' /proc/cmdline |  cut -d "=" -f2)
+    	[ ! -z "$ab_slot_suffix" ] && tell_kmsg "A/B slot system detected! Slot suffix is $ab_slot_suffix"
+    
+    	cat ${fstab} | while read line; do
+    		set -- $line
+    
+    		# stop processing if we hit the "#endhalium" comment in the file
+    		echo $1 | egrep -q "^#endhalium" && break
+    
+    		# Skip any unwanted entry
+    		echo $1 | egrep -q "^#" && continue
+    		([ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ] || [ -z "$4" ]) && continue
+    		([ "$2" = "/system" ] || [ "$2" = "/data" ] || [ "$2" = "/" ]) && continue
+    
+    		label=$(echo $1 | awk -F/ '{print $NF}')
+    		[ -z "$label" ] && continue
+    
+    		tell_kmsg "checking mount label $label"
+    
+    		# In case fstab provides /dev/mmcblk0p* lines
+    		path="/dev/$label"
+    		for dir in by-partlabel by-name by-label by-path by-uuid by-partuuid by-id; do
+    			# On A/B systems not all of the partitions are duplicated, so we have to check with and without suffix
+    			if [ -e "/dev/disk/$dir/$label$ab_slot_suffix" ]; then
+    				path="/dev/disk/$dir/$label$ab_slot_suffix"
+    				break
+    			elif [ -e "/dev/disk/$dir/$label" ]; then
+    				path="/dev/disk/$dir/$label"
+    				break
+    			fi
+    		done
+    
+    		[ ! -e "$path" ] && continue
+    
+    		mkdir -p ${mount_root}/$2
+    		tell_kmsg "mounting $path as ${mount_root}/$2"
+    		mount $path ${mount_root}/$2 -t $3 -o $4
+    	done
+    
+    	# Provide a bind mount from /cache to /userdata/cache on systems without a dedicated cache partition
+    	if [ ! -e ${mount_root}/cache ]; then
+    		if [ ! -d ${real_userdata}/cache ]; then
+    			mkdir ${real_userdata}/cache
+    		fi
+    		mkdir ${mount_root}/cache
+    		mount -o bind ${real_userdata}/cache ${mount_root}/cache
+    	fi
+    
+    	# Create an appropriate symlink for vendor files
+    	if [ ! -e ${mount_root}/vendor ]; then
+    		ln -sf system/vendor ${mount_root}/vendor
+    	fi
+    }
+    
+    mount_halium_overlay() {
+    	source=$1
+    	target=$2
+    
+    	if [ -d ${source} ]; then
+    		OLD_PWD=$PWD
+    		cd ${source}
+    
+    		for overlay in $(find . -type f); do
+    			[ -f ${target}/${overlay} ] && mount --bind ${source}/${overlay} ${target}/${overlay}
+    		done
+    
+    		cd $OLD_PWD
+    	fi
+    }
+    
+    resize_userdata_if_needed() {
+    
+    	# See if the filesystem on the userdata partition needs resizing (usually on first boot).
+    	# If the difference between the partition size and the filesystem size is above a small
+    	# threshold, assume it needs resizing to fill the partition.
+    
+    	path=$1
+    
+    	# Partition size in 1k blocks
+    	case $path in
+    	/dev/mmcblk*)
+    		pblocks=$(grep ${path#/dev/*} /proc/partitions | awk {'print $3'})
+    		;;
+    	/dev/disk*)
+    		pblocks=$(grep $(basename $(readlink $path)) /proc/partitions | awk {'print $3'})
+    		;;
+    	esac
+    	# Filesystem size in 4k blocks
+    	fsblocks=$(dumpe2fs -h $path | grep "Block count" | awk {'print $3'})
+    	# Difference between the reported sizes in 1k blocks
+    	dblocks=$((pblocks - 4 * fsblocks))
+    	if [ $dblocks -gt 10000 ]; then
+    		resize2fs -f $path
+    		tell_kmsg "resized userdata filesystem to fill $path"
+    	fi
+    }
+    
+    resize_lvm_if_needed() {
+    	# Like resize_userdata_if_needed, but for devices with the droidian
+    	# LVM vg in userdata.
+    	#
+    	# Note: this is meant to be done as an online resize. Thus, the stamp
+    	# file is checked on the mounted rootfs partition.
+    
+    	pv=${1}
+    	vg=${2}
+    	lv=${3}
+    
+    	if [ ! -e "/halium-system/var/lib/halium/requires-lvm-resize" ]; then
+    		# Bye bye
+    		return
+    	fi
+    
+    	part="/dev/${vg}/${lv}"
+    
+    	# Resize the underlying Physical Volume
+    	if ! lvm pvresize ${pv}; then
+    		tell_kmsg "Unable to resize PV ${pv}"
+    		return
+    	fi
+    
+    	# Now resize the rootfs LV with all the free extents
+    	if ! lvm lvresize -l +100%FREE ${part}; then
+    		tell_kmsg "Unable to resize LV ${lv}"
+    		return
+    	fi
+    
+    	# Finally resize the filesystem
+    	if [ "$(blkid ${part} -o value -s TYPE)" == "ext4" ]; then
+    		e2fsck -fy ${part}
+    
+    		if ! resize2fs -f ${part}; then
+    			tell_kmsg "Unable to resize ext4 partition ${part}"
+    			return
+    		fi
+    	else
+    		tell_kmsg "Unsupported filesystem on ${part}"
+    	fi
+    
+    	rm -f /halium-system/var/lib/halium/requires-lvm-resize
+    }
+    
+    process_bind_mounts() {
+    	# Mount a tmpfs in /run of rootfs to put the future image.fstab
+    	mount -o rw,nosuid,noexec,relatime,mode=755 -t tmpfs tmpfs ${rootmnt}/run
+    	# Prepare the fstab
+    	FSTAB=${rootmnt}/etc/fstab
+    	touch ${rootmnt}/run/image.fstab
+    	mount -o bind ${rootmnt}/run/image.fstab $FSTAB ||halium_panic "Could not bind-mount fstab"
+    	echo "/dev/root / rootfs defaults,ro 0 0" >>$FSTAB
+    
+    	tell_kmsg "Adding bind-mounts to $FSTAB"
+    }
+    
+    extract_android_ramdisk() {
+    	# Extracts the ramdisk from /android-system/boot/android-ramdisk.img to
+    	# /android-rootfs
+    
+    	# NOTE: we should find a faster way of doing that or cache it
+    	tell_kmsg "extracting android ramdisk"
+    	OLD_CWD=$(pwd)
+    	mount -n -t tmpfs tmpfs /android-rootfs
+    	cd /android-rootfs
+    	cat /android-system/boot/android-ramdisk.img | gzip -d | cpio -i
+    	cd $OLD_CWD
+    }
+    
+    mount_kernel_modules() {
+    	# Bind-mount /lib/modules from Android
+    	[ -e ${rootmnt}/android/system/lib/modules ] && mount --bind ${rootmnt}/android/system/lib/modules ${rootmnt}/lib/modules
+    }
+    
+    load_kernel_modules() {
+    	mkdir -p /lib/modules
+    	cd /lib/modules
+    	ln -sf /lib/modules "/lib/modules/$(uname -r)"
+    
+    	files="/override/modules.load /lib/modules/modules.load /override/modules.load.recovery /lib/modules/modules.load.recovery"
+    	for file in $files; do
+    		if [ -f "$file" ]; then
+    			module_list="$file"
+    			break
+    		fi
+    	done
+    
+    	if [ -n "$module_list" ]; then
+    	        tell_kmsg "Loading kernel modules from $module_list"
+    
+    		cat $module_list | while read line; do
+    			set -- $line
+    			# Skip commented entries
+    			[ "$1" = "#" ] && continue
+    			tell_kmsg "Loading module $1"
+    			modprobe -a "$1"
+    		done
+    	fi
+    
+    	cd -
+    }
+    
+    unlock_encrypted_partition() {
+    	part="${1}"
+    	header="${2}"
+    	name="${3}"
+    	is_recovery="${4}"
+    
+    	#halium_hook setup_touchscreen
+    
+    	tries="0"
+    	while [ "${1}" ]; do
+    		CRYPTTAB_TRIED="${tries}" unl0kr | \
+    			droidian-encryption-helper \
+    				--device "${part}" \
+    				--header "${header}" \
+    				--name "${name}" \
+    				--rootmnt "${rootmnt}" \
+    				--strip-newlines
+    		err="${?}"
+    		case "${err}" in
+    			2)
+    				# Wrong passphrase
+    				let tries=tries+1
+    
+    				if [ "${is_recovery}" == "yes" ] && [ "${tries}" > 5 ]; then
+    					# Recovery requested, trigger panic after 5 failures
+    					halium_panic "Unable to unlock root partition"
+    				fi
+    				;;
+    			0)
+    				if [ ! -e /dev/mapper/${name} ]; then
+    					halium_panic "Root partition unlocked, but device has not been mapped"
+    				fi
+    
+    				break
+    				;;
+    			*)
+    				# Unknown error
+    				halium_panic "Unknown error ${err} while unlocking root partition"
+    				break
+    				;;
+    		esac
+    	done
+    
+    	halium_hook teardown_touchscreen
+    }
+    
+    signal_root_move_done() {
+    	# Signal to droidian-encryption-helper that the root move has
+    	# been done so that it can chroot() into it
+    
+    	# No need to do this if the system is already encrypted
+    	[ -e /run/droidian-encryption-helper.pid ] || return
+    
+    	touch /run/halium-mounted
+    	count=0
+    	while [ -e /run/halium-mounted ] && [ ${count} -lt 20 ]; do
+    		sleep 1
+    
+    		let count=count+1
+    	done
+    }
+    
+    mount_vendor_partitions() {
+    	mkdir /vendor
+    	mkdir /vendor_dlkm
+    	if [ -e "/dev/disk/by-partlabel/super" ]; then
+    		tell_kmsg "mapping super partition"
+    		losetup -r /dev/loop0 /dev/disk/by-partlabel/super
+    		/usr/sbin/dmsetup create --concise "$(/usr/sbin/parse-android-dynparts /dev/loop0)"
+    	fi
+    
+    	vendor_images="/tmpmnt/vendor.img /dev/disk/by-partlabel/vendor${1} /dev/disk/by-partlabel/vendor_a /dev/disk/by-partlabel/vendor_b /dev/mapper/dynpart-vendor /dev/mapper/dynpart-vendor${1} /dev/mapper/dynpart-vendor_a /dev/mapper/dynpart-vendor_b"
+    	for image in $vendor_images; do
+    	    if [ -e $image ]; then
+    	        tell_kmsg "mounting vendor from $image"
+    	        mount $image /vendor -o ro
+    
+    	        if [ -e "/vendor/build.prop" ]; then
+    	            tell_kmsg "found valid vendor partition: $image"
+    	            break
+    	        else
+    	            tell_kmsg "$image is not a valid vendor partition"
+    	            umount /vendor
+    	        fi
+    	    fi
+    	done
+    
+    	vendor_dlkm_images="/dev/mapper/dynpart-vendor_dlkm /dev/mapper/dynpart-vendor_dlkm${1} /dev/mapper/dynpart-vendor_dlkm_a /dev/mapper/dynpart-vendor_dlkm_b"
+    	for image in $vendor_dlkm_images; do
+    	    if [ -e $image ]; then
+    	        tell_kmsg "mounting vendor_dlkm from $image"
+    	        mount $image /vendor_dlkm -o ro
+    
+    	        if [ -e "/vendor_dlkm/etc/build.prop" ]; then
+    	            tell_kmsg "found valid vendor_dlkm partition: $image"
+    	            break
+    	        else
+    	            tell_kmsg "$image is not a valid vendor_dlkm partition"
+    	            umount /vendor_dlkm
+    	        fi
+    	    fi
+    	done
+    }
+    
+    run() {
+    	# list of possible userdata partition names
+    	partlist="userdata UDA DATAFS USERDATA"
+    
+    	# Put all of this script's output into /dev/kmsg
+    	exec &>/dev/kmsg
+    
+    	load_kernel_modules
+    	tell_kmsg "Finished loading kernel modules"
+    	sleep 1
+
+    	# busybox mdev -s
+    	# udevadm trigger
+    
+    	# Mount root
+    	#
+    	# Create a temporary mountpoint for the bindmount
+    	mkdir -p /tmpmnt
+    
+    	# Make sure the device has been created by udev before we try to mount
+    	udevadm settle
+    
+    	# find the right partition
+    	for partname in $partlist; do
+    		part=$(find /dev -name $partname | tail -1)
+    		[ -z "$part" ] && continue
+    		path=$(readlink -f $part)
+    		[ -n "$path" ] && break
+    	done
+    
+    	# On systems with A/B partition layout, current slot is provided via cmdline parameter or bootconfig.
+    	if [ -e /proc/bootconfig ]; then
+    	    ab_slot_suffix=$(grep -o 'androidboot\.slot_suffix = ".."' /proc/bootconfig | cut -d '"' -f2)
+    	fi
+    
+    	if [ -z "$ab_slot_suffix" ]; then
+    	    ab_slot_suffix=$(grep -o 'androidboot\.slot_suffix=..' /proc/cmdline |  cut -d "=" -f2)
+    	fi
+    
+    	if [ -z "$path" ] && [ ! -z "$ab_slot_suffix" ] ; then
+    		tell_kmsg "Searching for A/B data partition on slot $ab_slot_suffix."
+    
+    		for partname in $partlist; do
+    			part=$(find /dev -name "$partname$ab_slot_suffix" | tail -1)
+    			[ -z "$part" ] && continue
+    			path=$(readlink -f $part)
+    			[ -n "$path" ] && break
+    		done
+    	fi
+    
+    	# override with a possible cmdline parameter
+    	if grep -q datapart= /proc/cmdline; then
+    		for x in $(cat /proc/cmdline); do
+    			case ${x} in
+    			datapart=*)
+    				path=${x#*=}
+    				;;
+    			esac
+    		done
+    	fi
+    
+    	if [ -z "$path" ]; then
+    		halium_panic "Couldn't find data partition."
+    	fi
+    
+    	mount_vendor_partitions "$ab_slot_suffix"
+    
+    	if grep -q droidian.lvm /proc/cmdline; then
+    		for x in $(cat /proc/cmdline); do
+    			case ${x} in
+    			droidian.lvm.vg=*)
+    				search_vg=${x#*=}
+    				;;
+    			droidian.lvm.root_lv=*)
+    				root_lv=${x#*=}
+    				;;
+    			droidian.lvm.reserved_lv=*)
+    				reserved_lv=${x#*=}
+    				;;
+    			droidian.lvm.persistent_lv=*)
+    				persistent_lv=${x#*=}
+    				;;
+    			esac
+    		done
+    	fi
+    
+    	# Set default search vgs and root_lv
+    	[ -z "${search_vg}" ] && search_vg="droidian sailfish"
+    	[ -z "${root_lv}" ] && root_lv="droidian-rootfs"
+    	[ -z "${reserved_lv}" ] && reserved_lv="droidian-reserved"
+    	[ -z "${persistent_lv}" ] && persistent_lv="droidian-persistent"
+    
+    	for try in 1 2 3 4 5; do
+    		lvm vgscan --mknodes
+    		for vg in ${search_vg}; do
+    			if lvm vgchange -ay ${vg} && [ -e "/dev/${vg}/${root_lv}" ]; then
+    				tell_kmsg "Found LVM VG ${vg}"
+    				_syspart="/dev/${vg}/${root_lv}"
+    				file_layout="partition"
+    				break
+    			fi
+    		done
+    		[ -n "${_syspart}" ] && break
+    		sleep 2
+    	done
+    	
+    	if [ -z "${_syspart}" ]; then
+            tell_kmsg "No LVM VG found"
+    	elif [ -e "/dev/${vg}/${reserved_lv}" ] && [ "$(blkid /dev/${vg}/${reserved_lv} -o value -s TYPE)" == "crypto_LUKS" ]; then
+    		# LUKS header, we should unlock
+    		unlocked_syspart_name="droidian_encrypted"
+    		use_luks="yes"
+    		unlock_encrypted_partition /dev/${vg}/${root_lv} /dev/${vg}/${reserved_lv} ${unlocked_syspart_name} ${HALIUM_RECOVERY}
+    		_syspart="/dev/mapper/${unlocked_syspart_name}"
+    	fi
+    	
+    
+    	# Prepare the root filesystem
+    	# NOTE: We mount it read-write in all cases, then remount read-only.
+    	#       This is to workaround a behaviour change in busybox which now
+    	#       uses read-only loops if the fs is initially mounted read-only.
+    	#       An alternative implementation would be to add losetup support
+    	#       to busybox and do the mount in two steps (rw loop, ro fs).
+    
+    	mkdir -p /halium-system
+    
+        tell_kmsg "Halium rootfs is $_syspart"
+
+    	tell_kmsg "mounting system rootfs at /halium-system"
+    	if [ -n "$_syspart" ]; then
+    		mount -o rw $_syspart /halium-system
+            resize_lvm_if_needed "${path}" "${vg}" "${root_lv}"
+    
+    	# Identify image mode: either "rootfs" or "system"
+    	mkdir -p /android-rootfs
+    	mkdir -p /android-system
+    
+    	identify_android_image
+    	[ $ANDROID_IMAGE_MODE = "unknown" ] && tell_kmsg "WARNING: Android system image not found."
+    
+    	tell_kmsg "mounting $_syspart (image developer mode)"
+    	mountroot_status="$?"
+    
+    	# Mount the android system partition to a temporary location
+    	MOUNT="ro"
+    	MOUNT_LOCATION="/android-$ANDROID_IMAGE_MODE"
+    	[ -e /tmpmnt/.writable_device_image -o -e /halium-system/.writable_device_image ] && MOUNT="rw"
+    	tell_kmsg "mounting android system image ($ANDROID_IMAGE) $MOUNT, in $MOUNT_LOCATION ($ANDROID_IMAGE_MODE mode)"
+    	if [ -n "${ANDROID_IMAGE}" ]; then
+    		mount -o loop,$MOUNT "$ANDROID_IMAGE" $MOUNT_LOCATION \
+    			|| tell_kmsg "WARNING: Failed to mount Android system.img."
+    	else
+    		tell_kmsg "WARNING: Unable to mount Android system image as it hasn't been found."
+    	fi
+    
+    	[ $ANDROID_IMAGE_MODE = "system" ] && extract_android_ramdisk
+
+        identify_boot_mode
+    }
+    run
+}
+
+# vim: set ft=sh ts=4 sw=4 et:
