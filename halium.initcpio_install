@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
 build() {
-    map add_binary resize2fs swapon e2fsck dumpe2fs
+    map add_binary resize2fs swapon e2fsck
 
     add_file /etc/udev/rules.d/90-touchscreen.rules 
     add_dir /usr/lib/udev/hwdb.d
