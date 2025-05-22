@@ -1,4 +1,9 @@
 #!/bin/bash
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# Copyright (C) 2025 aarchd
+# Copyright (C) 2025 Deepak Meena <notwho53@gmail.com>
+#
 
 set -e
 
