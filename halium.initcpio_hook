@@ -88,7 +88,8 @@ run_hook() {
         panic "Couldn't find data partition."
     fi
     
-    mkdir /vendor{,_dlkm}
+    mkdir /vendor
+    mkdir /vendor_dlkm
     if [ -e "/dev/disk/by-partlabel/super" ]; then
         tell_kmsg "Mapping super partition"
         losetup -r /dev/loop0 /dev/disk/by-partlabel/super
@@ -194,7 +195,8 @@ run_hook() {
         fi
     fi
     
-    mkdir -p /android-{rootfs,system}
+    mkdir -p /android-rootfs
+    mkdir -p /android-system
     
     ANDROID_IMAGE="/halium-system/var/lib/lxc/android/android-rootfs.img"
     if [ ! -f "${ANDROID_IMAGE}" ]; then
