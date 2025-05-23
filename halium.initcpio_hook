@@ -18,7 +18,6 @@ run_hook() {
     exec &> /dev/kmsg
     
     mkdir -p /lib/modules
-    cd /lib/modules
     ln -sf /lib/modules "/lib/modules/$(uname -r)"
     
     files="/override/modules.load /lib/modules/modules.load /override/modules.load.recovery /lib/modules/modules.load.recovery"
@@ -41,7 +40,6 @@ run_hook() {
         done < "${module_list}"
     fi
     
-    cd -
     tell_kmsg "Finished loading kernel modules"
     sleep 1
     
