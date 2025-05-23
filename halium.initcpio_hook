@@ -57,12 +57,14 @@ run_hook() {
         done
     fi
     
-    for partname in $partlist; do
-        part=$(find /dev -name $partname | tail -1)
-        [ -z "$part" ] && continue
-        path=$(readlink -f $part)
-        [ -n "$path" ] && break
-    done
+    if [ -z "$path" ]; then
+        for partname in $partlist; do
+            part=$(find /dev -name $partname | tail -1)
+            [ -z "$part" ] && continue
+            path=$(readlink -f $part)
+            [ -n "$path" ] && break
+        done
+    fi
     
     if [ -e /proc/bootconfig ]; then
         ab_slot_suffix=$(grep -o 'androidboot\.slot_suffix = ".."' /proc/bootconfig | cut -d '"' -f2)
