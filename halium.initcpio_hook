@@ -1,8 +1,8 @@
 #!/usr/bin/ash
 
 run_hook() {
-    local rootmnt partlist files module_list part path ab_slot_suffix label vendor_images vendor_dlkm_images
-    local search_vg root_lv reserved_lv persistent_lv _syspart fstab mount_root real_userdata
+    local rootmnt partlist files module_list part path ab_slot_suffix vendor_images vendor_dlkm_images
+    local search_vg root_lv reserved_lv persistent_lv _syspart
 
     tell_kmsg() {
         echo "initrd: $1" > /dev/kmsg || true
@@ -218,54 +218,6 @@ run_hook() {
         mkdir -p ${rootmnt}/userdata/android-data
         mount -o bind ${rootmnt}/userdata/android-data ${rootmnt}/android/data
         [ ! -h ${rootmnt}/data ] && ln -sf /android/data ${rootmnt}/data
-    
-        fstab="${rootmnt}/var/lib/lxc/android/rootfs/fstab*"
-        mount_root="${rootmnt}/android"
-        real_userdata="${rootmnt}/userdata"
-    
-        tell_kmsg "checking fstab $fstab for additional mount points"
-    
-        while read line; do
-            set -- $line
-            echo $1 | egrep -q "^#endhalium" && break
-            echo $1 | egrep -q "^#" && continue
-            ([ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ] || [ -z "$4" ]) && continue
-            ([ "$2" = "/system" ] || [ "$2" = "/data" ] || [ "$2" = "/" ]) && continue
-    
-            label=$(echo $1 | awk -F/ '{print $NF}')
-            [ -z "$label" ] && continue
-    
-            tell_kmsg "checking mount label $label"
-    
-            path="/dev/$label"
-            for dir in by-partlabel by-name by-label by-path by-uuid by-partuuid by-id; do
-                if [ -e "/dev/disk/$dir/$label$ab_slot_suffix" ]; then
-                    path="/dev/disk/$dir/$label$ab_slot_suffix"
-                    break
-                elif [ -e "/dev/disk/$dir/$label" ]; then
-                    path="/dev/disk/$dir/$label"
-                    break
-                fi
-            done
-    
-            [ ! -e "$path" ] && continue
-    
-            mkdir -p ${mount_root}/$2
-            tell_kmsg "mounting $path as ${mount_root}/$2"
-            mount $path ${mount_root}/$2 -t $3 -o $4
-        done < ${fstab}
-    
-        if [ ! -e ${mount_root}/cache ]; then
-            if [ ! -d ${real_userdata}/cache ]; then
-                mkdir ${real_userdata}/cache
-            fi
-            mkdir ${mount_root}/cache
-            mount -o bind ${real_userdata}/cache ${mount_root}/cache
-        fi
-    
-        if [ ! -e ${mount_root}/vendor ]; then
-            ln -sf system/vendor ${mount_root}/vendor
-        fi
     
         tell_kmsg "moving Android system to /android/system"
         mount --move /android-system ${rootmnt}/android/system
