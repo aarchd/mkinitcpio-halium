@@ -147,7 +147,6 @@ run_hook() {
         done
     fi
     
-    # Set default search vgs and root_lv
     [ -z "${search_vg}" ] && search_vg="aarchd droidian"
     [ -z "${root_lv}" ] && root_lv="aarchd-rootfs droidian-rootfs"
     [ -z "${reserved_lv}" ] && reserved_lv="aarchd-reserved droidian-reserved"
@@ -233,8 +232,6 @@ run_hook() {
             mkdir -p ${rootmnt}/android/vendor_dlkm
             mount --move /vendor_dlkm ${rootmnt}/android/vendor_dlkm
         fi
-    
-        [ -e ${rootmnt}/android/system/lib/modules ] && mount --bind ${rootmnt}/android/system/lib/modules ${rootmnt}/lib/modules
     
         [ -e ${rootmnt}/userdata/SWAP.img ] && swapon ${rootmnt}/userdata/SWAP.img
     else
