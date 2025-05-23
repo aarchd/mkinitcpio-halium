@@ -11,90 +11,90 @@ run_hook() {
     panic() {
         tell_kmsg "PANIC for reason: $1"
     }
-
+    
     rootmnt="/new_root"
-
-	partlist="userdata UDA DATAFS USERDATA"
-	exec &> /dev/kmsg
-
-	mkdir -p /lib/modules
-	cd /lib/modules
-	ln -sf /lib/modules "/lib/modules/$(uname -r)"
-
-	files="/override/modules.load /lib/modules/modules.load /override/modules.load.recovery /lib/modules/modules.load.recovery"
-	for file in $files; do
-    		if [ -f "$file" ]; then
-    			module_list="$file"
-    			break
-    		fi
-    	done
-
-	if [ -n "$module_list" ]; then
+    
+    partlist="userdata UDA DATAFS USERDATA"
+    exec &> /dev/kmsg
+    
+    mkdir -p /lib/modules
+    cd /lib/modules
+    ln -sf /lib/modules "/lib/modules/$(uname -r)"
+    
+    files="/override/modules.load /lib/modules/modules.load /override/modules.load.recovery /lib/modules/modules.load.recovery"
+    for file in $files; do
+        if [ -f "$file" ]; then
+            module_list="$file"
+            break
+        fi
+    done
+    
+    if [ -n "$module_list" ]; then
         tell_kmsg "Loading kernel modules from $module_list"
-
+    
         while read line; do
-    			set -- $line
-    			# Skip commented entries
-    			[ "$1" = "#" ] && continue
-    			tell_kmsg "Loading module $1"
-    			modprobe -a "$1"
-    	done < "${module_list}"
+            set -- $line
+            # Skip commented entries
+            [ "$1" = "#" ] && continue
+            tell_kmsg "Loading module $1"
+            modprobe -a "$1"
+        done < "${module_list}"
     fi
-
+    
     cd -
     tell_kmsg "Finished loading kernel modules"
     sleep 1
-
+    
     udevadm settle
-
+    
     if grep -q datapart= /proc/cmdline; then
-    	for x in $(cat /proc/cmdline); do
-    		case ${x} in
-    		datapart=*)
-    			path=${x#*=}
-    			;;
-    		esac
-    	done
+        for x in $(cat /proc/cmdline); do
+            case ${x} in
+                datapart=*)
+                    path=${x#*=}
+                    ;;
+            esac
+        done
     fi
-
+    
     for partname in $partlist; do
         part=$(find /dev -name $partname | tail -1)
-    	[ -z "$part" ] && continue
-    	path=$(readlink -f $part)
-    	[ -n "$path" ] && break
+        [ -z "$part" ] && continue
+        path=$(readlink -f $part)
+        [ -n "$path" ] && break
     done
-
+    
     if [ -e /proc/bootconfig ]; then
         ab_slot_suffix=$(grep -o 'androidboot\.slot_suffix = ".."' /proc/bootconfig | cut -d '"' -f2)
     fi
     if [ -z "$ab_slot_suffix" ]; then
-    	    ab_slot_suffix=$(grep -o 'androidboot\.slot_suffix=..' /proc/cmdline |  cut -d "=" -f2)
+        ab_slot_suffix=$(grep -o 'androidboot\.slot_suffix=..' /proc/cmdline |  cut -d "=" -f2)
     fi
-
+    
     [ -n "$ab_slot_suffix" ] && tell_kmsg "A/B slot system detected! Slot suffix is $ab_slot_suffix"
     
     if [ -z "$path" ] && [ ! -z "$ab_slot_suffix" ] ; then
-    	tell_kmsg "Searching for A/B data partition on slot $ab_slot_suffix."
+        tell_kmsg "Searching for A/B data partition on slot $ab_slot_suffix."
     
-    	for partname in $partlist; do
-    		part=$(find /dev -name "$partname$ab_slot_suffix" | tail -1)
-    		[ -z "$part" ] && continue
-    		path=$(readlink -f $part)
-    		[ -n "$path" ] && break
-    	done
+        for partname in $partlist; do
+            part=$(find /dev -name "$partname$ab_slot_suffix" | tail -1)
+            [ -z "$part" ] && continue
+            path=$(readlink -f $part)
+            [ -n "$path" ] && break
+        done
     fi
-
+    
     if [ -z "$path" ]; then
-    	panic "Couldn't find data partition."
+        panic "Couldn't find data partition."
     fi
     
     mkdir /vendor{,_dlkm}
     if [ -e "/dev/disk/by-partlabel/super" ]; then
         tell_kmsg "Mapping super partition"
-    	losetup -r /dev/loop0 /dev/disk/by-partlabel/super
-    	/usr/sbin/dmsetup create --concise "$(/usr/sbin/parse-android-dynparts /dev/loop0)"
+        losetup -r /dev/loop0 /dev/disk/by-partlabel/super
+        /usr/sbin/dmsetup create --concise "$(/usr/sbin/parse-android-dynparts /dev/loop0)"
     fi
-
+    
     vendor_images="/dev/disk/by-partlabel/vendor${ab_slot_suffix} /dev/disk/by-partlabel/vendor_a /dev/disk/by-partlabel/vendor_b /dev/mapper/dynpart-vendor /dev/mapper/dynpart-vendor${ab_slot_suffix} /dev/mapper/dynpart-vendor_a /dev/mapper/dynpart-vendor_b"
     for image in $vendor_images; do
         if [ -e $image ]; then
@@ -126,24 +126,24 @@ run_hook() {
             fi
         fi
     done
-
+    
     if grep -q droidian.lvm /proc/cmdline; then
-    	for x in $(cat /proc/cmdline); do
-    		case ${x} in
-    		droidian.lvm.vg=*)
-    			search_vg=${x#*=}
-    			;;
-    		droidian.lvm.root_lv=*)
-    			root_lv=${x#*=}
-    			;;
-    		droidian.lvm.reserved_lv=*)
-    			reserved_lv=${x#*=}
-    			;;
-    		droidian.lvm.persistent_lv=*)
-    			persistent_lv=${x#*=}
-    			;;
-    		esac
-    	done
+        for x in $(cat /proc/cmdline); do
+            case ${x} in
+                droidian.lvm.vg=*)
+                    search_vg=${x#*=}
+                    ;;
+                droidian.lvm.root_lv=*)
+                    root_lv=${x#*=}
+                    ;;
+                droidian.lvm.reserved_lv=*)
+                    reserved_lv=${x#*=}
+                    ;;
+                droidian.lvm.persistent_lv=*)
+                    persistent_lv=${x#*=}
+                    ;;
+            esac
+        done
     fi
     
     # Set default search vgs and root_lv
@@ -153,20 +153,20 @@ run_hook() {
     [ -z "${persistent_lv}" ] && persistent_lv="aarchd-persistent droidian-persistent"
     
     for try in 1 2 3 4 5; do
-    	lvm vgscan --mknodes
-    	for vg in ${search_vg}; do
-    		if lvm vgchange -ay ${vg}; then
+        lvm vgscan --mknodes
+        for vg in ${search_vg}; do
+            if lvm vgchange -ay ${vg}; then
                 for rlv in ${root_lv}; do
                     if [ -e "/dev/${vg}/${rlv}" ]; then
-    			        tell_kmsg "Found LVM VG ${vg}, LV ${rlv}"
-    			        _syspart="/dev/${vg}/${rlv}"
-    			        break 2
+                        tell_kmsg "Found LVM VG ${vg}, LV ${rlv}"
+                        _syspart="/dev/${vg}/${rlv}"
+                        break 2
                     fi
                 done
-    		fi
-    	done
-    	[ -n "${_syspart}" ] && break
-    	sleep 2
+            fi
+        done
+        [ -n "${_syspart}" ] && break
+        sleep 2
     done
     
     if [ -z "${_syspart}" ]; then
@@ -176,14 +176,14 @@ run_hook() {
     mkdir -p /halium-system
     
     tell_kmsg "Halium rootfs is $_syspart"
-
+    
     tell_kmsg "mounting system rootfs at /halium-system"
     if [ -n "$_syspart" ]; then
-		mount -o rw $_syspart /halium-system
+        mount -o rw $_syspart /halium-system
         if [ -e /halium-system/var/lib/halium/requires-lvm-resize ]; then
             lvm pvresize ${path}
             lvm lvresize -l +100%FREE ${_syspart}
-
+    
             if [ "$(blkid ${_syspart} -o value -s TYPE)" == "ext4" ]; then
                 e2fsck -fy ${_syspart}
                 resize2fs -f ${_syspart}
@@ -193,95 +193,95 @@ run_hook() {
             rm -f /halium-system/var/lib/halium/requires-lvm-resize
         fi
     fi
-
+    
     mkdir -p /android-{rootfs,system}
-
+    
     ANDROID_IMAGE="/halium-system/var/lib/lxc/android/android-rootfs.img"
     if [ ! -f "${ANDROID_IMAGE}" ]; then
         tell_kmsg "WARNING: Android system image not found."
     fi
-
+    
     mount -o loop,ro "${ANDROID_IMAGE}" /android-rootfs \
-	    || tell_kmsg "WARNING: Failed to mount Android system.img."
+        || tell_kmsg "WARNING: Failed to mount Android system.img."
     mount -o bind /android-rootfs/system /android-system
-
+    
     if [ -n "$_syspart" ]; then
         tell_kmsg "Normal boot"
-
+    
         mount --move /halium-system ${rootmnt}
         mkdir -p ${rootmnt}/android
         mount --move /android-rootfs ${rootmnt}/var/lib/lxc/android/rootfs
-		mount -o bind ${rootmnt}/var/lib/lxc/android/rootfs ${rootmnt}/android
+        mount -o bind ${rootmnt}/var/lib/lxc/android/rootfs ${rootmnt}/android
         mkdir -p ${rootmnt}/android/data ${rootmnt}/android/system
-		mkdir -p ${rootmnt}/userdata/android-data
-		mount -o bind ${rootmnt}/userdata/android-data ${rootmnt}/android/data
-		[ ! -h ${rootmnt}/data ] && ln -sf /android/data ${rootmnt}/data
-
+        mkdir -p ${rootmnt}/userdata/android-data
+        mount -o bind ${rootmnt}/userdata/android-data ${rootmnt}/android/data
+        [ ! -h ${rootmnt}/data ] && ln -sf /android/data ${rootmnt}/data
+    
         fstab="${rootmnt}/var/lib/lxc/android/rootfs/fstab*"
         mount_root="${rootmnt}/android"
         real_userdata="${rootmnt}/userdata"
-
+    
         tell_kmsg "checking fstab $fstab for additional mount points"
-
-   	    while read line; do
-        	set -- $line
-        	echo $1 | egrep -q "^#endhalium" && break
-        	echo $1 | egrep -q "^#" && continue
-        	([ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ] || [ -z "$4" ]) && continue
-        	([ "$2" = "/system" ] || [ "$2" = "/data" ] || [ "$2" = "/" ]) && continue
-        
-        	label=$(echo $1 | awk -F/ '{print $NF}')
-        	[ -z "$label" ] && continue
-        
-        	tell_kmsg "checking mount label $label"
-        
-        	path="/dev/$label"
-        	for dir in by-partlabel by-name by-label by-path by-uuid by-partuuid by-id; do
-        		if [ -e "/dev/disk/$dir/$label$ab_slot_suffix" ]; then
-        			path="/dev/disk/$dir/$label$ab_slot_suffix"
-        			break
-        		elif [ -e "/dev/disk/$dir/$label" ]; then
-        			path="/dev/disk/$dir/$label"
-        			break
-        		fi
-        	done
-        
-        	[ ! -e "$path" ] && continue
-        
-        	mkdir -p ${mount_root}/$2
-        	tell_kmsg "mounting $path as ${mount_root}/$2"
-        	mount $path ${mount_root}/$2 -t $3 -o $4
+    
+        while read line; do
+            set -- $line
+            echo $1 | egrep -q "^#endhalium" && break
+            echo $1 | egrep -q "^#" && continue
+            ([ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ] || [ -z "$4" ]) && continue
+            ([ "$2" = "/system" ] || [ "$2" = "/data" ] || [ "$2" = "/" ]) && continue
+    
+            label=$(echo $1 | awk -F/ '{print $NF}')
+            [ -z "$label" ] && continue
+    
+            tell_kmsg "checking mount label $label"
+    
+            path="/dev/$label"
+            for dir in by-partlabel by-name by-label by-path by-uuid by-partuuid by-id; do
+                if [ -e "/dev/disk/$dir/$label$ab_slot_suffix" ]; then
+                    path="/dev/disk/$dir/$label$ab_slot_suffix"
+                    break
+                elif [ -e "/dev/disk/$dir/$label" ]; then
+                    path="/dev/disk/$dir/$label"
+                    break
+                fi
+            done
+    
+            [ ! -e "$path" ] && continue
+    
+            mkdir -p ${mount_root}/$2
+            tell_kmsg "mounting $path as ${mount_root}/$2"
+            mount $path ${mount_root}/$2 -t $3 -o $4
         done < ${fstab}
-        
+    
         if [ ! -e ${mount_root}/cache ]; then
-        	if [ ! -d ${real_userdata}/cache ]; then
-        		mkdir ${real_userdata}/cache
-        	fi
-        	mkdir ${mount_root}/cache
-        	mount -o bind ${real_userdata}/cache ${mount_root}/cache
+            if [ ! -d ${real_userdata}/cache ]; then
+                mkdir ${real_userdata}/cache
+            fi
+            mkdir ${mount_root}/cache
+            mount -o bind ${real_userdata}/cache ${mount_root}/cache
         fi
-        
+    
         if [ ! -e ${mount_root}/vendor ]; then
-        	ln -sf system/vendor ${mount_root}/vendor
+            ln -sf system/vendor ${mount_root}/vendor
         fi
-
+    
         tell_kmsg "moving Android system to /android/system"
-		mount --move /android-system ${rootmnt}/android/system
-
+        mount --move /android-system ${rootmnt}/android/system
+    
         if [ -e "/vendor/build.prop" ]; then
-			tell_kmsg "moving Android vendor to /android/vendor"
-			mkdir -p ${rootmnt}/android/vendor
-			mount --move /vendor ${rootmnt}/android/vendor
-		fi
-
-		if [ -e "/vendor_dlkm/etc/build.prop" ]; then
-			tell_kmsg "moving Android vendor_dlkm to /android/vendor_dlkm"
-			mkdir -p ${rootmnt}/android/vendor_dlkm
-			mount --move /vendor_dlkm ${rootmnt}/android/vendor_dlkm
-		fi
-
+            tell_kmsg "moving Android vendor to /android/vendor"
+            mkdir -p ${rootmnt}/android/vendor
+            mount --move /vendor ${rootmnt}/android/vendor
+        fi
+    
+        if [ -e "/vendor_dlkm/etc/build.prop" ]; then
+            tell_kmsg "moving Android vendor_dlkm to /android/vendor_dlkm"
+            mkdir -p ${rootmnt}/android/vendor_dlkm
+            mount --move /vendor_dlkm ${rootmnt}/android/vendor_dlkm
+        fi
+    
         [ -e ${rootmnt}/android/system/lib/modules ] && mount --bind ${rootmnt}/android/system/lib/modules ${rootmnt}/lib/modules
-
+    
         [ -e ${rootmnt}/userdata/SWAP.img ] && swapon ${rootmnt}/userdata/SWAP.img
     else
         panic "Couldn't find system partition."
