@@ -4,7 +4,7 @@
 build() {
     map add_binary resize2fs swapon e2fsck
 
-    add_file /etc/udev/rules.d/90-touchscreen.rules 
+    add_udev_rule /etc/udev/rules.d/90-touchscreen.rules 
     add_dir /usr/lib/udev/hwdb.d
 }
 
