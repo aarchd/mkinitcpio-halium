@@ -6,6 +6,8 @@ build() {
 
     add_udev_rule /etc/udev/rules.d/90-touchscreen.rules 
     add_dir /usr/lib/udev/hwdb.d
+
+    add_runscript
 }
 
 help() {
