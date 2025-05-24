@@ -1,6 +1,6 @@
 #!/usr/bin/ash
 
-run_hook() {
+run_latehook() {
     local rootmnt partlist files module_list part path ab_slot_suffix vendor_images vendor_dlkm_images
     local search_vg root_lv reserved_lv persistent_lv _syspart
 
