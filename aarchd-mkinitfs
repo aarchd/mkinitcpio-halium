@@ -30,11 +30,11 @@ if [[ $# -eq 0 ]]; then
     echo "  -> Removed: usr/lib/modules, bin/kmod, lib/libkmod.*"
 
     echo "[+] Creating gzip-compressed initramfs..."
-    (cd "$WORKDIR" && find . | cpio -o -H newc | gzip -c) > "$TMPDIR/aarchd-initrd.img-gz"
+    (cd "$WORKDIR" && find . | cpio -o -H newc | gzip -9 -c) > "$TMPDIR/aarchd-initrd.img-gz"
     echo "  -> Saved: $TMPDIR/aarchd-initrd.img-gz"
 
     echo "[+] Creating lz4-compressed initramfs..."
-    (cd "$WORKDIR" && find . | cpio -o -H newc | lz4 -l -c) > "$TMPDIR/aarchd-initrd.img-lz4"
+    (cd "$WORKDIR" && find . | cpio -o -H newc | lz4 -9 -l -c) > "$TMPDIR/aarchd-initrd.img-lz4"
     echo "  -> Saved: $TMPDIR/aarchd-initrd.img-lz4"
 
     echo "[+] Done."
