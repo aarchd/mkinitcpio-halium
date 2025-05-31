@@ -38,6 +38,9 @@ if [[ $# -eq 0 ]]; then
     (cd "$WORKDIR" && find . | cpio -o -H newc | lz4 -9 -l -c) > "$TMPDIR/aarchd-initrd.img-lz4"
     echo "  -> Saved: $TMPDIR/aarchd-initrd.img-lz4"
 
+    echo "[+] Saving to Current Directory..."
+    cp "$TMPDIR/aarchd-initrd.img-{gz,lz4}" .
+
     echo "[+] Done."
     exit 0
 fi
