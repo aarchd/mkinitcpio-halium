@@ -1,0 +1,55 @@
+name: Build Initramfs
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up GIT
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Pull rootfs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download -R "aarchd/rootfs" -p "rootfs.tar.gz"
+          mkdir -p /tmp/rootfs
+          sudo tar -xzf rootfs.tar.gz -C /tmp/rootfs
+
+      - name: Build Initramfs
+        run: |
+          git clone https://github.com/aarchd/arch-install-scripts --depth 1
+          sudo make -j4 -C arch-install-scripts install
+          mkdir -p /tmp/initrd
+          sudo mkdir -p /tmp/rootfs/mnt/{PWD,initrd}
+          sudo mount --bind "$PWD" /tmp/rootfs/mnt/PWD
+          sudo mount --bind /tmp/initrd /tmp/rootfs/mnt/initrd
+          sudo arch-chroot /tmp/rootfs /bin/bash -c \
+            "cd /mnt/PWD && \
+             pacman -Syu make linux lxc-android mint parse-android-dynparts e2fsprogs \
+              mkinitcpio lvm2 lz4 gzip --needed --noconfirm && \
+             make build -j4 && \
+             cp -a aarchd-initrd.img-{gz,lz4} /mnt/initrd/"
+          sudo umount /tmp/rootfs/mnt/PWD
+          sudo umount /tmp/rootfs/mnt/initrd
+
+      - name: Release Initramfs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        uses: softprops/action-gh-release@v2.2.2
+        with:
+          name: "Release"
+          tag_name: "latest"
+          files: |
+            /tmp/initrd/aarchd-initrd.img.gz
+            /tmp/initrd/aarchd-initrd.img.lz4
