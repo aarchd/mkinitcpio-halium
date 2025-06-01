@@ -44,6 +44,13 @@ jobs:
           sudo umount /tmp/rootfs/mnt/initrd
           sudo chown -R $USER:$USER /tmp/initrd/aarchd-initrd.img-{gz,lz4}
 
+      - name: Delete previous release and tag (if exists)
+        run: |
+          gh release delete latest -y || true
+          git push --delete origin refs/tags/latest || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Release Initramfs
         env:
           GH_TOKEN: ${{ github.token }}
