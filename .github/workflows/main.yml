@@ -52,5 +52,5 @@ jobs:
           name: "Release"
           tag_name: "latest"
           files: |
-            /tmp/initrd/aarchd-initrd.img.gz
-            /tmp/initrd/aarchd-initrd.img.lz4
+            /tmp/initrd/aarchd-initrd.img-gz
+            /tmp/initrd/aarchd-initrd.img-lz4
