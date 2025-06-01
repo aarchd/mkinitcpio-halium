@@ -6,9 +6,11 @@ HOOKS_DIR = $(ETC_DIR)/initcpio/hooks
 INSTALL_DIR = $(ETC_DIR)/initcpio/install
 BIN_DIR = $(DESTDIR)$(PREFIX)/bin
 
-all:
-	@echo "Use 'make install' to install files."
+all: build install
 
+build: install
+	aarchd-mkinitfs
+	
 install:
 	install -Dm644 mkinitcpio.aarchd.conf $(ETC_DIR)/mkinitcpio.aarchd.conf
 	install -Dm755 halium.initcpio_hook $(HOOKS_DIR)/halium
