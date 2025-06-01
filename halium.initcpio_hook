@@ -6,6 +6,7 @@ run_latehook() {
 
     tell_kmsg() {
         echo "initrd: $1" > /dev/kmsg || true
+        mint --text "$1" || true
     }
 
     panic() {
