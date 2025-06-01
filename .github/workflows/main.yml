@@ -42,6 +42,7 @@ jobs:
              cp -a aarchd-initrd.img-{gz,lz4} /mnt/initrd/"
           sudo umount /tmp/rootfs/mnt/PWD
           sudo umount /tmp/rootfs/mnt/initrd
+          sudo chown -R $USER:$USER /tmp/initrd/aarchd-initrd.img-{gz,lz4}
 
       - name: Release Initramfs
         env:
