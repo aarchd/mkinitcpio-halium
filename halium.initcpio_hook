@@ -45,16 +45,23 @@ run_latehook() {
     sleep 1
     
     udevadm settle
-    
-    if grep -q datapart= /proc/cmdline; then
-        for x in $(cat /proc/cmdline); do
-            case ${x} in
-                datapart=*)
-                    path=${x#*=}
-                    ;;
-            esac
-        done
+
+    if [ -e /proc/bootconfig ]; then
+        ab_slot_suffix=$(grep -o 'androidboot\.slot_suffix = ".."' /proc/bootconfig | cut -d '"' -f2)
     fi
+
+    for param in $(</proc/cmdline); do
+        case "$param" in
+            datapart=*) path=${param#*=} ;;
+            androidboot.slot_suffix=*) [ -z "$ab_slot_suffix" ] && ab_slot_suffix=${param#*=} ;;
+            droidian.lvm.vg=*) search_vg=${param#*=} ;;
+            droidian.lvm.root_lv=*) root_lv=${param#*=} ;;
+            droidian.lvm.reserved_lv=*) reserved_lv=${param#*=} ;;
+            droidian.lvm.persistent_lv=*) persistent_lv=${param#*=} ;;
+        esac
+    done
+
+    [ -n "$ab_slot_suffix" ] && tell_kmsg "A/B slot system detected! Slot suffix is $ab_slot_suffix"
     
     if [ -z "$path" ]; then
         for partname in $partlist; do
@@ -64,15 +71,6 @@ run_latehook() {
             [ -n "$path" ] && break
         done
     fi
-    
-    if [ -e /proc/bootconfig ]; then
-        ab_slot_suffix=$(grep -o 'androidboot\.slot_suffix = ".."' /proc/bootconfig | cut -d '"' -f2)
-    fi
-    if [ -z "$ab_slot_suffix" ]; then
-        ab_slot_suffix=$(grep -o 'androidboot\.slot_suffix=..' /proc/cmdline |  cut -d "=" -f2)
-    fi
-    
-    [ -n "$ab_slot_suffix" ] && tell_kmsg "A/B slot system detected! Slot suffix is $ab_slot_suffix"
     
     if [ -z "$path" ] && [ ! -z "$ab_slot_suffix" ] ; then
         tell_kmsg "Searching for A/B data partition on slot $ab_slot_suffix."
@@ -128,25 +126,6 @@ run_latehook() {
             fi
         fi
     done
-    
-    if grep -q droidian.lvm /proc/cmdline; then
-        for x in $(cat /proc/cmdline); do
-            case ${x} in
-                droidian.lvm.vg=*)
-                    search_vg=${x#*=}
-                    ;;
-                droidian.lvm.root_lv=*)
-                    root_lv=${x#*=}
-                    ;;
-                droidian.lvm.reserved_lv=*)
-                    reserved_lv=${x#*=}
-                    ;;
-                droidian.lvm.persistent_lv=*)
-                    persistent_lv=${x#*=}
-                    ;;
-            esac
-        done
-    fi
     
     [ -z "${search_vg}" ] && search_vg="aarchd droidian"
     [ -z "${root_lv}" ] && root_lv="aarchd-rootfs droidian-rootfs"
