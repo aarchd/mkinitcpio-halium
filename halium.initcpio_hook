@@ -212,8 +212,7 @@ run_latehook() {
             mkdir -p ${rootmnt}/android/vendor_dlkm
             mount --move /vendor_dlkm ${rootmnt}/android/vendor_dlkm
         fi
-    
-        [ -e ${rootmnt}/userdata/SWAP.img ] && swapon ${rootmnt}/userdata/SWAP.img
+
     else
         panic "Couldn't find system partition."
     fi
