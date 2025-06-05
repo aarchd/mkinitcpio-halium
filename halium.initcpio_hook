@@ -39,10 +39,9 @@ run_latehook() {
             tell_kmsg "Loading module $1"
             modprobe -a "$1"
         done < "${module_list}"
+        sleep 1
+        tell_kmsg "Finished loading kernel modules"
     fi
-    
-    tell_kmsg "Finished loading kernel modules"
-    sleep 1
     
     udevadm settle
 
