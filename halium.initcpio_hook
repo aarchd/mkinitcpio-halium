@@ -129,7 +129,14 @@ run_latehook() {
     if [ -n "$path" ]; then
         mount -o rw $path /halium-system || panic "Failed to mount ${path} at /halium-system"
         if [ "$(blkid ${path} -o value -s TYPE)" == "ext4" ]; then
-            if [ -e /halium-system/var/lib/halium/requires-resize ]; then
+            if [ -e /halium-system/rootfs.img ]; then
+                mkdir -p /tmp-rootfs-mnt
+                mount -o loop,rw /halium-system/rootfs.img /tmp-rootfs-mnt || panic "Failed to mount rootfs.img"
+
+                umount /halium-system
+                mount --move /tmp-rootfs-mnt /halium-system
+                tell_kmsg "Mounted rootfs.img at /halium-system"
+            elif [ -e /halium-system/var/lib/halium/requires-resize ]; then
                 tell_kmsg "Resizing ext4 filesystem on ${path}"
                 e2fsck -fy ${path}
                 resize2fs -f ${path}
