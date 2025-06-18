@@ -132,7 +132,6 @@ run_latehook() {
             if [ -e /halium-system/rootfs.img ]; then
                 mkdir -p /tmp-rootfs-mnt
                 mount -o loop,rw /halium-system/rootfs.img /tmp-rootfs-mnt || panic "Failed to mount rootfs.img"
-
                 umount /halium-system
                 mount --move /tmp-rootfs-mnt /halium-system
                 tell_kmsg "Mounted rootfs.img at /halium-system"
