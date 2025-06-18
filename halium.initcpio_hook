@@ -2,7 +2,6 @@
 
 run_latehook() {
     local rootmnt partlist files module_list part path ab_slot_suffix vendor_images vendor_dlkm_images
-    local search_vg root_lv reserved_lv persistent_lv _syspart
 
     tell_kmsg() {
         echo "initrd: $1" > /dev/kmsg || true
@@ -53,10 +52,6 @@ run_latehook() {
         case "$param" in
             datapart=*) path=${param#*=} ;;
             androidboot.slot_suffix=*) [ -z "$ab_slot_suffix" ] && ab_slot_suffix=${param#*=} ;;
-            droidian.lvm.vg=*) search_vg=${param#*=} ;;
-            droidian.lvm.root_lv=*) root_lv=${param#*=} ;;
-            droidian.lvm.reserved_lv=*) reserved_lv=${param#*=} ;;
-            droidian.lvm.persistent_lv=*) persistent_lv=${param#*=} ;;
         esac
     done
 
@@ -126,50 +121,22 @@ run_latehook() {
         fi
     done
     
-    [ -z "${search_vg}" ] && search_vg="aarchd droidian"
-    [ -z "${root_lv}" ] && root_lv="aarchd-rootfs droidian-rootfs"
-    [ -z "${reserved_lv}" ] && reserved_lv="aarchd-reserved droidian-reserved"
-    [ -z "${persistent_lv}" ] && persistent_lv="aarchd-persistent droidian-persistent"
-    
-    for try in 1 2 3 4 5; do
-        lvm vgscan --mknodes
-        for vg in ${search_vg}; do
-            if lvm vgchange -ay ${vg}; then
-                for rlv in ${root_lv}; do
-                    if [ -e "/dev/${vg}/${rlv}" ]; then
-                        tell_kmsg "Found LVM VG ${vg}, LV ${rlv}"
-                        _syspart="/dev/${vg}/${rlv}"
-                        break 2
-                    fi
-                done
-            fi
-        done
-        [ -n "${_syspart}" ] && break
-        sleep 2
-    done
-    
-    if [ -z "${_syspart}" ]; then
-        tell_kmsg "No LVM VG found :("
-    fi
-    
     mkdir -p /halium-system
     
-    tell_kmsg "Halium rootfs is $_syspart"
+    tell_kmsg "Halium rootfs is $path"
     
     tell_kmsg "mounting system rootfs at /halium-system"
-    if [ -n "$_syspart" ]; then
-        mount -o rw $_syspart /halium-system
-        if [ -e /halium-system/var/lib/halium/requires-lvm-resize ]; then
-            lvm pvresize ${path}
-            lvm lvresize -l +100%FREE ${_syspart}
-    
-            if [ "$(blkid ${_syspart} -o value -s TYPE)" == "ext4" ]; then
-                e2fsck -fy ${_syspart}
-                resize2fs -f ${_syspart}
-            else
-                tell_kmsg "Unsupported filesystem on part ${_syspart}"
+    if [ -n "$path" ]; then
+        mount -o rw $path /halium-system || panic "Failed to mount ${path} at /halium-system"
+        if [ "$(blkid ${path} -o value -s TYPE)" == "ext4" ]; then
+            if [ -e /halium-system/var/lib/halium/requires-resize ]; then
+                tell_kmsg "Resizing ext4 filesystem on ${path}"
+                e2fsck -fy ${path}
+                resize2fs -f ${path}
+                rm -f /halium-system/var/lib/halium/requires-resize
             fi
-            rm -f /halium-system/var/lib/halium/requires-lvm-resize
+        else
+            tell_kmsg "Unsupported filesystem on part ${part}"
         fi
     fi
     
@@ -185,7 +152,7 @@ run_latehook() {
         || tell_kmsg "WARNING: Failed to mount Android system.img."
     mount -o bind /android-rootfs/system /android-system
     
-    if [ -n "$_syspart" ]; then
+    if [ -n "$path" ]; then
         tell_kmsg "Normal boot"
     
         mount --move /halium-system ${rootmnt}
