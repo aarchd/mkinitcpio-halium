@@ -8,13 +8,12 @@ During the porting process, I removed some code, so this is **not** a direct 1:1
 
 ## Features Removed
 Yes you read that correct :P
-- Support for recovery flashable rootfs images 
 - Support for legacy devices
 - Support for encrypted rootfs (temporary)
 - Some legacy Halium and UBTouch specific code
 
 ## TODO
-- Support for offline charging [PARTIAL]
+- Support for offline charging [DONE]
 - Reintroduce support for encrypted rootfs
 - Reintroduce support for recovery images [DONE]
 
