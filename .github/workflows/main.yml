@@ -25,6 +25,8 @@ jobs:
           gh release download -R "aarchd/rootfs" -p "rootfs.tar.zst"
           mkdir -p /tmp/rootfs
           sudo tar -xf rootfs.tar.zst --use-compress-program="zstd -d" -C /tmp/rootfs
+          sudo mv /tmp/rootfs/etc/pacman.d/mirrorlist /tmp/rootfs/etc/pacman.d/mirrorlist.bak
+          echo "Server = http://ca.us.mirror.archlinuxarm.org/aarch64/\$repo" | sudo tee "/tmp/rootfs/etc/pacman.d/mirrorlist"
 
       - name: Build Initramfs
         run: |
