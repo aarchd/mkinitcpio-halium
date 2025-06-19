@@ -2,6 +2,7 @@
 
 run_latehook() {
     local rootmnt partlist files module_list part path ab_slot_suffix vendor_images vendor_dlkm_images
+    local udev_rules_file
 
     tell_kmsg() {
         echo "initrd: $1" > /dev/kmsg || true
@@ -170,6 +171,46 @@ run_latehook() {
     
         tell_kmsg "moving Android system to /android/system"
         mount --move /android-system ${rootmnt}/android/system
+
+        udev_rules_file="${rootmnt}/etc/udev/rules.d/70-device.rules"
+
+        if [ ! -e "$udev_rules_file" ]; then
+            cat ${rootmnt}/var/lib/lxc/android/rootfs/ueventd*.rc /vendor/ueventd*.rc 2>/dev/null | \
+            grep ^/dev | \
+            sed -e 's|^/dev/||' | \
+            awk '{printf "ACTION==\"add\", KERNEL==\"%s\", OWNER=\"%s\", GROUP=\"%s\", MODE=\"%s\"\n",$1,$3,$4,$2}' | \
+            sed -e 's/\r//' | \
+            > "$udev_rules_file"
+
+            # FIXME: ADD QCOM SUPPORT
+            for file in /vendor/etc/init/hw/init.mt*.rc; do
+                [ -e "$file" ] || continue
+                awk '
+                    $1 == "chown" && $4 ~ /^\/dev\// {
+                        chown[$4] = $2 ":" $3
+                    }
+            
+                    $1 == "chmod" && $3 ~ /^\/dev\// {
+                        chmod[$3] = $2
+                    }
+            
+                    END {
+                        for (dev in chown) {
+                            if (dev in chmod) {
+                                split(chown[dev], parts, ":")
+                                owner = parts[1]
+                                group = parts[2]
+                                mode = chmod[dev]
+                                sub(".*/", "", dev)
+                                print "ACTION==\"add\", KERNEL==\"" dev "\", OWNER=\"" owner "\", GROUP=\"" group "\", MODE=\"" mode "\""
+                            }
+                        }
+                    }
+                ' "$file" >> "$udev_rules_file"
+            done
+            sed -i '/GROUP="radio"\|GROUP="root"\|GROUP="system"/!s/GROUP="\([^"]*\)"/GROUP="android_\1"/' "$udev_rules_file"
+            sort -u "$udev_rules_file" -o "$udev_rules_file" 
+        fi
     
         if [ -e "/vendor/build.prop" ]; then
             tell_kmsg "moving Android vendor to /android/vendor"
