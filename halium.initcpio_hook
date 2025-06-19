@@ -42,8 +42,6 @@ run_latehook() {
         tell_kmsg "Finished loading kernel modules"
     fi
     
-    udevadm settle
-
     if [ -e /proc/bootconfig ]; then
         ab_slot_suffix=$(grep -o 'androidboot\.slot_suffix = ".."' /proc/bootconfig | cut -d '"' -f2)
     fi
