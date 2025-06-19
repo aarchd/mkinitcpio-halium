@@ -22,9 +22,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download -R "aarchd/rootfs" -p "rootfs.tar.gz"
+          gh release download -R "aarchd/rootfs" -p "rootfs.tar.zst"
           mkdir -p /tmp/rootfs
-          sudo tar -xzf rootfs.tar.gz -C /tmp/rootfs
+          sudo tar -xf rootfs.tar.zst --use-compress-program="zstd -d" -C /tmp/rootfs
 
       - name: Build Initramfs
         run: |
