@@ -3,7 +3,93 @@
 
 run_latehook() {
     local rootmnt partlist files module_list part path ab_slot_suffix vendor_images vendor_dlkm_images
-    local udev_rules_file
+    local udev_rules_file usb_iface network_function
+    local android_usb=/sys/class/android_usb/android0
+    local gadget_dir=/config/usb_gadget
+
+    write() {
+    	echo -n "$2" >"$1"
+    }
+
+    usb_setup_configfs() {
+        G_USB_ISERIAL=$gadget_dir/g1/strings/0x409/serialnumber
+    
+        mkdir $gadget_dir/g1
+        write $gadget_dir/g1/idVendor                   "0x18D1"
+        write $gadget_dir/g1/idProduct                  "0xD001"
+        mkdir $gadget_dir/g1/strings/0x409
+        write $gadget_dir/g1/strings/0x409/serialnumber "$1"
+        write $gadget_dir/g1/strings/0x409/manufacturer "initrd"
+        write $gadget_dir/g1/strings/0x409/product      "Failed to boot"
+    
+        for function in ncm.usb0 rndis.usb0 rndis_bam.rndis; do
+            mkdir $gadget_dir/g1/functions/$function && network_function=$function && break
+        done
+
+        mkdir $gadget_dir/g1/configs/c.1
+        mkdir $gadget_dir/g1/configs/c.1/strings/0x409
+        write $gadget_dir/g1/configs/c.1/strings/0x409/configuration "rndis"
+    
+        ln -s $gadget_dir/g1/functions/$network_function $gadget_dir/g1/configs/c.1
+    
+        for f in /sys/class/udc/*; do
+            [ -e "$f" ] || break
+            name=$(basename "$f")
+            case $name in
+                dummy*) ;;
+                *) echo "$name" > "$gadget_dir/g1/UDC"; break ;;
+            esac
+        done
+    }
+    
+    usb_setup_android_usb() {
+        G_USB_ISERIAL=$android_usb/iSerial
+        write $android_usb/enable          0
+        write $android_usb/functions       ""
+        write $android_usb/enable          1
+        sleep 0.5
+        write $android_usb/enable          0
+        write $android_usb/idVendor        18D1
+        write $android_usb/idProduct       D001
+        write $android_usb/iManufacturer   "initrd"
+        write $android_usb/iProduct        "Failed to boot"
+        write $android_usb/iSerial         "$1"
+        write $android_usb/functions       "rndis"
+        write $android_usb/enable          1
+    }
+    
+    usb_setup() {
+        mkdir /config || true
+        mount -t configfs none /config || true
+    
+        if [ -d $android_usb ]; then
+            usb_setup_android_usb "$1"
+        elif [ -d $gadget_dir ]; then
+            usb_setup_configfs "$1"
+        fi
+    }
+    
+    usb_info() {
+        sleep 1
+        write "$G_USB_ISERIAL" "$1"
+    }
+    
+    inject_loop() {
+    	INJ_DIR=/init-ctl
+    	INJ_STDIN=$INJ_DIR/stdin
+    
+    	mkdir $INJ_DIR
+    	mkfifo $INJ_STDIN
+    	echo "This entire directory is for debugging init - it can safely be removed" >$INJ_DIR/README
+    
+    	while :; do
+    		while read -r IN; do
+    			if [ "$IN" = "continue" ]; then break 2; fi
+    			$IN
+    		done <$INJ_STDIN
+    	done
+    	rm -rf $INJ_DIR
+    }
 
     tell_kmsg() {
         echo "initrd: $1" > /dev/kmsg || true
@@ -12,6 +98,35 @@ run_latehook() {
 
     panic() {
         tell_kmsg "PANIC for reason: $1"
+        usb_setup "initrd telnet 192.168.2.15"
+        if ifconfig rndis0 "$LOCAL_IP"; then
+            usb_iface=rndis0
+        elif /sbin/ifconfig usb0 "$LOCAL_IP"; then
+            usb_iface=usb0
+        fi
+        ifconfig -a
+        if [ -z "$usb_iface" ]; then
+            usb_info "initrd Debug: ERROR: could not setup USB as usb0 or rndis0"
+            dmesg
+            sleep 60
+            reboot -f
+        fi
+        {
+            echo "start 192.168.2.20"
+            echo "end 192.168.2.90"
+            echo "lease_file /var/udhcpd.leases"
+            echo "interface $usb_iface"
+            echo "option subnet 255.255.255.0"
+        } >> /etc/udhcpd.conf
+        udhcpd
+        telnetd -b 192.168.2.15:23 -l /bin/sh
+        usb_info "initrd Debug: PANIC for reason: $1"
+        ps -wlT
+        ps -ef
+        netstat -lnp
+        cat /proc/mounts
+        sync
+        inject_loop
     }
     
     rootmnt="/new_root"
