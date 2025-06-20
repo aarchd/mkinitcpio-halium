@@ -61,7 +61,7 @@ run_latehook() {
     
     if [ -z "$path" ]; then
         for partname in $partlist; do
-            part=$(find /dev -name "$partname" | tail -1)
+            part=$(find /dev -name "$partname" -print -quit)
             [ -z "$part" ] && continue
             path=$(readlink -f "$part")
             [ -n "$path" ] && break
@@ -72,7 +72,7 @@ run_latehook() {
         tell_kmsg "Searching for A/B data partition on slot $ab_slot_suffix."
     
         for partname in $partlist; do
-            part=$(find /dev -name "$partname$ab_slot_suffix" | tail -1)
+            part=$(find /dev -name "$partname$ab_slot_suffix" -print -quit)
             [ -z "$part" ] && continue
             path=$(readlink -f "$part")
             [ -n "$path" ] && break
