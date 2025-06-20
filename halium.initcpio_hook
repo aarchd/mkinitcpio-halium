@@ -202,8 +202,8 @@ run_latehook() {
     mkdir /vendor_dlkm
     if [ -e "/dev/disk/by-partlabel/super" ]; then
         tell_kmsg "Mapping super partition"
-        losetup -r /dev/loop0 /dev/disk/by-partlabel/super
-        /usr/sbin/dmsetup create --concise "$(/usr/sbin/parse-android-dynparts /dev/loop0)"
+        dmsetup create --concise "$(parse-android-dynparts /dev/disk/by-partlabel/super)" \
+            || panic "Failed to create dynamic partitions from super"
     fi
     
     vendor_images="/dev/disk/by-partlabel/vendor${ab_slot_suffix} /dev/disk/by-partlabel/vendor_a /dev/disk/by-partlabel/vendor_b /dev/mapper/dynpart-vendor /dev/mapper/dynpart-vendor${ab_slot_suffix} /dev/mapper/dynpart-vendor_a /dev/mapper/dynpart-vendor_b"
