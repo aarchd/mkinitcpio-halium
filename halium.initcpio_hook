@@ -47,7 +47,7 @@ run_latehook() {
         ab_slot_suffix=$(grep -o 'androidboot\.slot_suffix = ".."' /proc/bootconfig | cut -d '"' -f2)
     fi
 
-    for param in $(</proc/cmdline); do
+    for param in $(cat /proc/cmdline); do
         case "$param" in
             datapart=*) path=${param#*=} ;;
             androidboot.slot_suffix=*) [ -z "$ab_slot_suffix" ] && ab_slot_suffix=${param#*=} ;;
