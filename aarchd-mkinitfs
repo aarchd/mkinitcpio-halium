@@ -21,7 +21,7 @@ if [[ $# -eq 0 ]]; then
     mkdir -p "$WORKDIR"
 
     echo "[+] Generating initramfs content using mkinitcpio..."
-    KERNEL_VERSION=$(ls /lib/modules | sort -Vr | head -n1)
+    KERNEL_VERSION=$(printf '%s\n' /lib/modules/* | xargs -n1 basename | sort -Vr | head -n1)
     mkinitcpio -c "$CONF" -d "$WORKDIR" -k "$KERNEL_VERSION"
 
     echo "[+] Removing unneeded files..."
