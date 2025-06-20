@@ -1,4 +1,5 @@
 #!/usr/bin/ash
+# shellcheck shell=dash
 
 run_latehook() {
     local rootmnt partlist files module_list part path ab_slot_suffix vendor_images vendor_dlkm_images
@@ -16,6 +17,7 @@ run_latehook() {
     rootmnt="/new_root"
     
     partlist="userdata UDA DATAFS USERDATA"
+    # shellcheck disable=SC3020
     exec &> /dev/kmsg
     
     mkdir -p /lib/modules
@@ -32,8 +34,8 @@ run_latehook() {
     if [ -n "$module_list" ]; then
         tell_kmsg "Loading kernel modules from $module_list"
     
-        while read line; do
-            set -- $line
+        while read -r line; do
+            set -- "$line"
             # Skip commented entries
             [ "$1" = "#" ] && continue
             tell_kmsg "Loading module $1"
@@ -47,6 +49,7 @@ run_latehook() {
         ab_slot_suffix=$(grep -o 'androidboot\.slot_suffix = ".."' /proc/bootconfig | cut -d '"' -f2)
     fi
 
+    # shellcheck disable=SC2013
     for param in $(cat /proc/cmdline); do
         case "$param" in
             datapart=*) path=${param#*=} ;;
@@ -58,20 +61,20 @@ run_latehook() {
     
     if [ -z "$path" ]; then
         for partname in $partlist; do
-            part=$(find /dev -name $partname | tail -1)
+            part=$(find /dev -name "$partname" | tail -1)
             [ -z "$part" ] && continue
-            path=$(readlink -f $part)
+            path=$(readlink -f "$part")
             [ -n "$path" ] && break
         done
     fi
     
-    if [ -z "$path" ] && [ ! -z "$ab_slot_suffix" ] ; then
+    if [ -z "$path" ] && [ -n "$ab_slot_suffix" ] ; then
         tell_kmsg "Searching for A/B data partition on slot $ab_slot_suffix."
     
         for partname in $partlist; do
             part=$(find /dev -name "$partname$ab_slot_suffix" | tail -1)
             [ -z "$part" ] && continue
-            path=$(readlink -f $part)
+            path=$(readlink -f "$part")
             [ -n "$path" ] && break
         done
     fi
@@ -90,9 +93,9 @@ run_latehook() {
     
     vendor_images="/dev/disk/by-partlabel/vendor${ab_slot_suffix} /dev/disk/by-partlabel/vendor_a /dev/disk/by-partlabel/vendor_b /dev/mapper/dynpart-vendor /dev/mapper/dynpart-vendor${ab_slot_suffix} /dev/mapper/dynpart-vendor_a /dev/mapper/dynpart-vendor_b"
     for image in $vendor_images; do
-        if [ -e $image ]; then
+        if [ -e "$image" ]; then
             tell_kmsg "mounting vendor from $image"
-            mount $image /vendor -o ro
+            mount "$image" /vendor -o ro
     
             if [ -e "/vendor/build.prop" ]; then
                 tell_kmsg "found valid vendor partition: $image"
@@ -106,9 +109,9 @@ run_latehook() {
     
     vendor_dlkm_images="/dev/mapper/dynpart-vendor_dlkm /dev/mapper/dynpart-vendor_dlkm${ab_slot_suffix} /dev/mapper/dynpart-vendor_dlkm_a /dev/mapper/dynpart-vendor_dlkm_b"
     for image in $vendor_dlkm_images; do
-        if [ -e $image ]; then
+        if [ -e "$image" ]; then
             tell_kmsg "mounting vendor_dlkm from $image"
-            mount $image /vendor_dlkm -o ro
+            mount "$image" /vendor_dlkm -o ro
     
             if [ -e "/vendor_dlkm/etc/build.prop" ]; then
                 tell_kmsg "found valid vendor_dlkm partition: $image"
@@ -126,8 +129,8 @@ run_latehook() {
     
     tell_kmsg "mounting system rootfs at /halium-system"
     if [ -n "$path" ]; then
-        mount -o rw $path /halium-system || panic "Failed to mount ${path} at /halium-system"
-        if [ "$(blkid ${path} -o value -s TYPE)" == "ext4" ]; then
+        mount -o rw "$path" /halium-system || panic "Failed to mount ${path} at /halium-system"
+        if [ "$(blkid "${path}" -o value -s TYPE)" = "ext4" ]; then
             if [ -e /halium-system/rootfs.img ]; then
                 mkdir -p /tmp-rootfs-mnt
                 mount -o loop,rw /halium-system/rootfs.img /tmp-rootfs-mnt || panic "Failed to mount rootfs.img"
@@ -136,8 +139,8 @@ run_latehook() {
                 tell_kmsg "Mounted rootfs.img at /halium-system"
             elif [ -e /halium-system/var/lib/halium/requires-resize ]; then
                 tell_kmsg "Resizing ext4 filesystem on ${path}"
-                e2fsck -fy ${path}
-                resize2fs -f ${path}
+                e2fsck -fy "${path}"
+                resize2fs -f "${path}"
                 rm -f /halium-system/var/lib/halium/requires-resize
             fi
         else
