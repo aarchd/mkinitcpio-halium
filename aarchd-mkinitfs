@@ -25,10 +25,8 @@ if [[ $# -eq 0 ]]; then
     mkinitcpio -c "$CONF" -d "$WORKDIR" -k "$KERNEL_VERSION"
 
     echo "[+] Removing unneeded files..."
-    rm -rf "$WORKDIR/usr/lib/modules/" \
-           "$WORKDIR/bin/kmod" \
-           "$WORKDIR/lib/libkmod."*
-    echo "  -> Removed: usr/lib/modules, bin/kmod, lib/libkmod.*"
+    rm -rf "$WORKDIR/usr/lib/modules/"
+    echo "  -> Removed: usr/lib/modules"
 
     echo "[+] Creating gzip-compressed initramfs..."
     (cd "$WORKDIR" && find . | cpio -o -H newc | gzip -9 -c) > "$SAVEDIR/aarchd-initrd.img-gz"
