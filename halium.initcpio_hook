@@ -130,6 +130,7 @@ run_latehook() {
     }
     
     rootmnt="/new_root"
+    mkdir -p "$rootmnt"
     
     partlist="userdata UDA DATAFS USERDATA"
     # shellcheck disable=SC3020
@@ -285,7 +286,6 @@ run_latehook() {
         mkdir -p ${rootmnt}/android/data ${rootmnt}/android/system
         mkdir -p ${rootmnt}/userdata/android-data
         mount -o bind ${rootmnt}/userdata/android-data ${rootmnt}/android/data
-        [ ! -h ${rootmnt}/data ] && ln -sf /android/data ${rootmnt}/data
     
         tell_kmsg "moving Android system to /android/system"
         mount --move /android-system ${rootmnt}/android/system
