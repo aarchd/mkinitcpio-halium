@@ -28,6 +28,9 @@ if [[ $# -eq 0 ]]; then
     rm -rf "$WORKDIR/usr/lib/modules/"
     echo "  -> Removed: usr/lib/modules"
 
+    echo "[+] Removing root mount handler..."
+    sed -i 's/^\(mount_handler=\)default_mount_handler/\1:/' "$WORKDIR/init"
+
     echo "[+] Creating gzip-compressed initramfs..."
     (cd "$WORKDIR" && find . | cpio -o -H newc | gzip -9 -c) > "$SAVEDIR/aarchd-initrd.img-gz"
     echo "  -> Saved: $SAVEDIR/aarchd-initrd.img-gz"
