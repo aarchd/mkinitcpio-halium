@@ -32,11 +32,11 @@ if [[ $# -eq 0 ]]; then
     sed -i 's/^\(mount_handler=\)default_mount_handler/\1:/' "$WORKDIR/init"
 
     echo "[+] Creating gzip-compressed initramfs..."
-    (cd "$WORKDIR" && find . | cpio -o -H newc | gzip -9 -c) > "$SAVEDIR/aarchd-initrd.img-gz"
+    (cd "$WORKDIR" && find . | cpio -o -H newc | gzip --best -c) > "$SAVEDIR/aarchd-initrd.img-gz"
     echo "  -> Saved: $SAVEDIR/aarchd-initrd.img-gz"
 
     echo "[+] Creating lz4-compressed initramfs..."
-    (cd "$WORKDIR" && find . | cpio -o -H newc | lz4 -9 -l -c) > "$SAVEDIR/aarchd-initrd.img-lz4"
+    (cd "$WORKDIR" && find . | cpio -o -H newc | lz4 --best -l -c) > "$SAVEDIR/aarchd-initrd.img-lz4"
     echo "  -> Saved: $SAVEDIR/aarchd-initrd.img-lz4"
 
     echo "[+] Done."
